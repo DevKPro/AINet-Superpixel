@@ -8,8 +8,8 @@ from joblib import Parallel, delayed
 import matplotlib.pyplot as plt
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--dataset", type=str, default="", help="where the filtered dataset is stored")
-parser.add_argument("--dump_root", type=str, default="", help="Where to dump the data")
+parser.add_argument("--dataset", type=str, default="L:/datasets", help="where the filtered dataset is stored")
+parser.add_argument("--dump_root", type=str, default="./BSDS500", help="Where to dump the data")
 parser.add_argument("--b_filter", type=bool, default=False, help="we do not use this in our paper")
 parser.add_argument("--num_threads", type=int, default=4, help="number of threads to use")
 args = parser.parse_args()

@@ -26,7 +26,8 @@ class ListDataset(data.Dataset):
         self.data_length = 0
         self.flag = flag
         
-        self.BDS_list = open(self.data_root + f'{flag}.txt').readlines()
+        # self.BDS_list = open(self.data_root + f'{flag}.txt').readlines()
+        self.BDS_list = open(os.path.join(self.data_root, f'{flag}.txt')).readlines()
         #self.BDS_list = self.BDS_list[:self.debug_num]
         self.BDS_ttrans,self.BDS_coTrans = get_transform(args, dataset='BDS500', flag=flag)
         #if flag == 'train':

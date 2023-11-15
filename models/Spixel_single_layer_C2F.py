@@ -162,12 +162,12 @@ class SpixelNet(nn.Module):
         sp_feat = F.pad(sp_feat, [1,1,1,1])
         b, c, h, w = sp_feat.shape
         output_list = []
-        interval = 16 if level ==0 else 16
+        interval = 16 if level ==0 else 16  # 这个代表什么？
         for i in range(1,h-1):
             row_list = []
             for j in range(1,w-1):
-                sp_patch = sp_feat[:,:, (i-1):(i+2), (j-1):(j+2)]
-                sp_patch = sp_patch.repeat(1,1,interval,interval)
+                sp_patch = sp_feat[:,:, (i-1):(i+2), (j-1):(j+2)]   # 相邻SP
+                sp_patch = sp_patch.repeat(1,1,interval,interval)   # TODO:这个操作是什么意思？有什么效果？  对应论文提到的下采样16倍，这里是为了上采样回去。上采样的地方的embedding是SPembedding
                 row_list.append(sp_patch)
 
             output_list.append(torch.cat(row_list, dim=-1))
@@ -175,13 +175,13 @@ class SpixelNet(nn.Module):
         output = torch.cat(output_list, dim=-2)
         #output = output * (1-self.mask_select)
 
-        return output
+        return output       # 获得SP feature上采样16倍得到的feature
 
     def expand_pixel(self, pixel_feat, level=0):
         b,c,h,w = pixel_feat.shape
         pixel_feat = pixel_feat.view(b,c,h,1,w,1)
         pixel_feat = pixel_feat.repeat(1,1,1,3,1,3)
-        pixel_feat = pixel_feat.reshape(b,c,h*3,w*3)
+        pixel_feat = pixel_feat.reshape(b,c,h*3,w*3)    #
        
         if level == 0:
             pixel_feat = pixel_feat * self.mask_select
@@ -200,57 +200,57 @@ class SpixelNet(nn.Module):
         #===================================================================
  
         b,c,h,w = x.shape
-        mask_select = self.mask_select0.repeat(h,w)
-        self.mask_select = mask_select.view(1,1, h*3, w*3).float()
+        mask_select = self.mask_select0.repeat(h,w)                 # 3*h,3*w
+        self.mask_select = mask_select.view(1,1, h*3, w*3).float()  # 1,1,3*h,3*w
 
-        mask_select = self.mask_select0.repeat(h//2,w//2)
-        self.mask_select_ = mask_select.view(1,1, h//2*3, w//2*3).float()
+        mask_select = self.mask_select0.repeat(h//2,w//2)                   #  3*h/2,3*h/2
+        self.mask_select_ = mask_select.view(1,1, h//2*3, w//2*3).float()   #  1,1,3*h/2,3*h/2
 
-        out1 = self.conv0b(self.conv0a(x)) #5*5
-        out2 = self.conv1b(self.conv1a(out1)) #11*11
-        out3 = self.conv2b(self.conv2a(out2)) #23*23
-        out4 = self.conv3b(self.conv3a(out3)) #47*47
-        out5 = self.conv4b(self.conv4a(out4)) #95*95
-
-        out5_attn = self.sp_pred(out5)
-        out5 = out5 + out5_attn
-        out6 = self.conv5b(self.conv5a(out5)) #95*95
-
-        out_deconv3 = self.deconv3(out5)
+        out1 = self.conv0b(self.conv0a(x)) #5*5         b,16,h,w
+        out2 = self.conv1b(self.conv1a(out1)) #11*11    b,32,h/2,w/2
+        out3 = self.conv2b(self.conv2a(out2)) #23*23    b,64,h/4,w/4
+        out4 = self.conv3b(self.conv3a(out3)) #47*47    b,128,h/8,w/8
+        out5 = self.conv4b(self.conv4a(out4)) #95*95    b,256,h/16,w/16
+        # 看成SP的输出
+        out5_attn = self.sp_pred(out5)          # b,256,h/16,w/16
+        out5 = out5 + out5_attn                 # b,256,h/16,w/16
+        out6 = self.conv5b(self.conv5a(out5)) #95*95 b,512,(h/16+1)/2,(w/16+1)/2
+        # 反卷积
+        out_deconv3 = self.deconv3(out5)        # b,128,h/8,w/8
         concat3 = torch.cat((out4, out_deconv3), 1)
         out_conv3_1 = self.conv3_1(concat3)
 
-        out_deconv2 = self.deconv2(out_conv3_1)
+        out_deconv2 = self.deconv2(out_conv3_1)     # b,64,h/4,w/4
         concat2 = torch.cat((out3, out_deconv2), 1)
         out_conv2_1 = self.conv2_1(concat2)
 
-        out_deconv1 = self.deconv1(out_conv2_1)
+        out_deconv1 = self.deconv1(out_conv2_1)     # b,32,h/2,w/2
         concat1 = torch.cat((out2, out_deconv1), 1)
         out_conv1_1 = self.conv1_1(concat1)
 
-        sp_map = self._bridge_sp2(self._bridge_sp1(out6))
-        sp_expand = self.expand_sp(sp_map, level=1)
-        pixel_expand = self.expand_pixel(out_conv1_1, level=1)
-        if sp_expand.shape[-1] != pixel_expand.shape[-1] or sp_expand.shape[-2] != pixel_expand.shape[-2]:
+        sp_map = self._bridge_sp2(self._bridge_sp1(out6))   # b,32,(h/16+1)/2,(w/16+1)/2
+        sp_expand = self.expand_sp(sp_map, level=1)         # b,32,((h/16+1)/2+2)*16,((w/16+1)/2+2)*16 SP特征上采样16倍到第二层特征图的尺寸
+        pixel_expand = self.expand_pixel(out_conv1_1, level=1)  # 九个方位对应的特征
+        if sp_expand.shape[-1] != pixel_expand.shape[-1] or sp_expand.shape[-2] != pixel_expand.shape[-2]:      # 统一SP上采样后的特征图与pixel
             sp_expand = F.interpolate(sp_expand, (pixel_expand.shape[-2], pixel_expand.shape[-1]), mode='bilinear', align_corners=True)
         merged = sp_expand + pixel_expand
         out_ = self._merge_sp(merged)
         out_conv1_1 = out_conv1_1 + out_ 
-
+        # 最后一层反卷积
         out_deconv0 = self.deconv0(out_conv1_1)
         concat0 = torch.cat((out1, out_deconv0), 1)
         out_conv0_1 = self.conv0_1(concat0)
         
         sp_map = self.bridge_sp2(self.bridge_sp1(out5))
-        sp_expand = self.expand_sp(sp_map)
-        pixel_expand = self.expand_pixel(out_conv0_1)
+        sp_expand = self.expand_sp(sp_map,level=0)
+        pixel_expand = self.expand_pixel(out_conv0_1,level=0)
         merged = sp_expand + pixel_expand
         #merged = torch.cat([pixel_expand, sp_expand], dim=1)
         out = self.merge_sp(merged)
-        out = out + out_conv0_1
+        out = out + out_conv0_1     # 两次特征叠加
 
         mask0 = self.pred_mask0(out)
-        prob0 = self.softmax(mask0)
+        prob0 = self.softmax(mask0)     # 9个方位上像素所属SP的概率
 
         return prob0, out_conv0_1
 
